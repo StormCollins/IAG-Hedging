@@ -1,0 +1,27 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<DnaLibrary Name='IAGHedging Add-In' RuntimeVersion='v4.0' xmlns='http://schemas.excel-dna.net/addin/2020/07/dnalibrary'>
+  <ExternalLibrary Path='IAGHedging.dll' ExplicitExports='false' ExplicitRegistration='false' LoadFromBytes='true' Pack='true' IncludePdb='false'/>
+    <Reference Path="MathNet.Numerics.dll" Pack="true" />
+    <Reference Path="QLNet.dll" Pack="true" />
+	<Reference Path="..\..\..\..\..\..\..\Windows\Microsoft.NET\assembly\GAC_MSIL\System.Windows.Forms\v4.0_4.0.0.0__b77a5c561934e089\System.Windows.Forms.dll" Pack="true" />
+	<CustomUI>
+	<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui'>
+	  <ribbon>
+		<tabs>
+		  <tab id='tabIAGHedging' label='IAG Hedging' insertAfterMso='TabHome'>
+			<group id='grpHedging' label='Hedging'>
+			  <button
+				id='btnAddNewInterestRateCurve'
+				label='Add New Interest Rate Curve'
+				onAction='AddNewInterestRateCurve'/>
+			  <button
+				id='btnCreateIrs'
+				label='Create IRS'
+				onAction='CreateIrs'/>
+		</group>
+		  </tab>
+		</tabs>
+	  </ribbon>
+	</customUI>
+  </CustomUI>
+</DnaLibrary>
