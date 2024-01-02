@@ -89,6 +89,7 @@ public class RibbonController : ExcelRibbon
         DateTime inceptionDate = DateTime.FromOADate(createIrsWorksheet.Range["CreateIRS.InceptionDate"].Value2);
         DateTime tradeDate = DateTime.FromOADate(createIrsWorksheet.Range["CreateIRS.TradeDate"].Value2);
         DateTime maturityDate = DateTime.FromOADate(createIrsWorksheet.Range["CreateIRS.MaturityDate"].Value2);
+        DateTime marketDataBaseDate = DateTime.FromOADate(createIrsWorksheet.Range["CreateIRS.MarketDataBaseDate"].Value2);
         string dayCountConvention = createIrsWorksheet.Range["CreateIRS.DayCountConvention"].Value2;
         double nominalValueOfDebt = createIrsWorksheet.Range["CreateIRS.NominalValueOfDebt"].Value2;
         double premiumPaid = createIrsWorksheet.Range["CreateIRS.PremiumPaid"].Value2;
@@ -98,6 +99,30 @@ public class RibbonController : ExcelRibbon
         string newIrsSheetName = tradeId.Replace(" ", "");
 
         Settings.setEvaluationDate(new Date(inceptionDate));
+
+        // Check if relevant interest rate curve exists for IRS.
+        bool curveFound = false;
+        foreach (Name name in xlApp.Names)
+        {
+            if (string.Compare(
+                    strA: name.Name,
+                    strB: $"MarketData.DiscountCurves.{currency}.{floatingLegPaymentFrequency}.{marketDataBaseDate:yyyyMMdd}",
+                    comparisonType: StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                curveFound = true;
+                break;
+            }
+        }
+
+        if (!curveFound)
+        {
+            MessageBox.Show(
+                text: $"No interest rate curve for market data base date ({marketDataBaseDate:yyyy-MM-dd}) found.", 
+                caption: "Interest Rate Curve Not Found", 
+                buttons: MessageBoxButtons.OK,
+                icon: MessageBoxIcon.Error);
+            return;
+        }
 
         // Warn if there is already a sheet with the given Trade ID.
         foreach (Worksheet worksheet in currentWorkbook.Worksheets)
@@ -110,7 +135,7 @@ public class RibbonController : ExcelRibbon
                         caption: "FIS Upload Sheet Exists", 
                         buttons: MessageBoxButtons.OKCancel,
                         icon: MessageBoxIcon.Warning);
-
+            
                 if (result == DialogResult.OK) 
                 {
                     xlApp.DisplayAlerts = false;
@@ -216,7 +241,7 @@ public class RibbonController : ExcelRibbon
         // Evaluate IRS at inception
         CreateOutputHeading(newIrsSheet, "IRS Evaluation", shiftDown, 2, 16, $"{newIrsSheetName}.IRSEvaluation.Title");
         YieldTermStructure discountCurve = 
-            GetMarketDataCurve(marketDataWorksheet, currency, floatingLegPaymentFrequency, new Date(inceptionDate));
+            GetMarketDataCurve(marketDataWorksheet, currency, floatingLegPaymentFrequency, new Date(marketDataBaseDate));
 
         (List<DateTime> startDates, List<DateTime> endDates, VanillaSwap vanillaSwap) =
             CreateInterestRateSwap(
@@ -288,7 +313,7 @@ public class RibbonController : ExcelRibbon
             WriteValueToCell(newIrsSheet, startDates[i], FormatType.Date, shiftDown + i, 2, BackgroundColor.Yellow);
             WriteValueToCell(newIrsSheet, endDates[i], FormatType.Date, shiftDown + i, 3, BackgroundColor.Yellow);
             WriteValueToCell(newIrsSheet, notional, FormatType.NumberWithoutDecimals, shiftDown + i, 4, BackgroundColor.Yellow);
-            double forwardRate = discountCurve.forwardRate(startDates[i], endDates[i], new Actual360(), Compounding.Simple).value();
+            double forwardRate = discountCurve.forwardRate(startDates[i], endDates[i], new Actual360(), Compounding.SimpleThenCompounded, Frequency.Quarterly).value();
             WriteValueToCell(newIrsSheet, forwardRate, FormatType.Percentage, shiftDown + i, 5, BackgroundColor.Yellow);
             WriteValueToCell(newIrsSheet, discountCurve.discount(endDates[i]), FormatType.NumberWithDecimals, shiftDown + i, 6, BackgroundColor.Yellow);
 
@@ -1002,6 +1027,10 @@ public class RibbonController : ExcelRibbon
         for (int i = 1; i <= curveRange.Rows.Count; i++)
         {
             object x = curveRange[i, 1].Value2;
+            if (x is null)
+            {
+                break;
+            }
             object y = curveRange[i, 2].Value2;
             dates.Add(new Date(DateTime.FromOADate((double)x)));
             discountFactors.Add((double)y);
@@ -1132,7 +1161,7 @@ public class RibbonController : ExcelRibbon
                 caption: "Missing New Hedging Date", 
                 buttons: MessageBoxButtons.OK,
                 icon: MessageBoxIcon.Warning);
-
+        
             newHedgingDateRange.Select();
             return;
         }
@@ -1198,10 +1227,10 @@ public class RibbonController : ExcelRibbon
         if (string.Compare(sheetName, "Market Data", StringComparison.OrdinalIgnoreCase) != 0)
         {
             MessageBox.Show(
-                "Incorrect sheet. Please select 'Market Data' sheet before running this function.",
-                "Market Data Sheet Not Selected",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                text: "Incorrect sheet. Please select 'Market Data' sheet before running this function.",
+                caption: "Market Data Sheet Not Selected",
+                buttons: MessageBoxButtons.OK,
+                icon: MessageBoxIcon.Warning);
             return;
         }
 
@@ -1209,7 +1238,6 @@ public class RibbonController : ExcelRibbon
         string currency = sheet.Range["MarketData.NewCurve.Currency"].Value2;
         string frequency = sheet.Range["MarketData.NewCurve.ResetFrequency"].Value2;
 
-        // TODO: Check that the curve doesn't exist yet.
         foreach (Name name in xlApp.Names)
         {
             if (string.Compare(
@@ -1219,20 +1247,41 @@ public class RibbonController : ExcelRibbon
             {
                 DialogResult result =
                     MessageBox.Show(
-                        $"An interest rate curve for the date {date:yyyy-MM-dd} already exists. Ovewrite?",
-                        "Curve Exists",
-                        MessageBoxButtons.OKCancel,
-                        MessageBoxIcon.Warning);
-
-                if (result == DialogResult.OK) 
-                { 
-                    // TODO: Code to overwrite the discount curve.
-                }
-                else
+                        text: $"An interest rate curve for the date {date:yyyy-MM-dd} already exists. Ovewrite?",
+                        caption: "Curve Exists",
+                        buttons: MessageBoxButtons.OKCancel,
+                        icon: MessageBoxIcon.Warning);
+        
+                if (result == DialogResult.Cancel)
                 {
                     return;
                 }
             }
+        }
+
+        DateTime newCurveFirstDate = DateTime.FromOADate(sheet.Range["MarketData.NewCurve.FirstDate"].Value2);
+
+        if (newCurveFirstDate != date)
+        {
+            MessageBox.Show(
+                text: $"The curve base date ({date:yyyy-MM-dd}) is not equal to the first date in the curve ({newCurveFirstDate:yyyy-MM-dd}).",
+                caption: "Mismatched Dates",
+                buttons: MessageBoxButtons.OK,
+                icon: MessageBoxIcon.Error);
+
+            return;
+        }
+
+        double newCurveFirstDiscountFactor = (double)sheet.Range["MarketData.NewCurve.FirstDiscountFactor"].Value2;
+        if (newCurveFirstDiscountFactor != 1)
+        {
+            MessageBox.Show(
+                text: $"The first discount factor ({newCurveFirstDiscountFactor}) is not equal to 1.",
+                caption: "Incorrect Discount Factor",
+                buttons: MessageBoxButtons.OK,
+                icon: MessageBoxIcon.Error);
+
+            return;
         }
 
         sheet.Range["MarketData.InterestRateCurves.Title"].Select();
